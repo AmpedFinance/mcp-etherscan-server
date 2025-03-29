@@ -8,19 +8,37 @@ import { z } from 'zod';
 // Load environment variables
 config();
 
-const apiKey = process.env.ETHERSCAN_API_KEY;
-if (!apiKey) {
-  throw new Error('ETHERSCAN_API_KEY environment variable is required');
+// Get API keys for different networks
+const ethereumApiKey = process.env.ETHEREUM_API_KEY || process.env.ETHERSCAN_API_KEY;
+const sonicApiKey = process.env.SONIC_API_KEY || process.env.ETHERSCAN_API_KEY;
+const baseApiKey = process.env.BASE_API_KEY || process.env.ETHERSCAN_API_KEY;
+
+// Create a map of API keys
+const apiKeys: Record<NetworkType, string> = {
+  ethereum: ethereumApiKey || '',
+  sonic: sonicApiKey || '',
+  base: baseApiKey || ''
+};
+
+// Check if at least one API key is available
+if (!ethereumApiKey && !sonicApiKey && !baseApiKey) {
+  throw new Error('At least one API key is required (ETHEREUM_API_KEY, SONIC_API_KEY, BASE_API_KEY, or ETHERSCAN_API_KEY)');
 }
 
 // Get default network from environment variable or default to ethereum
 const defaultNetwork = (process.env.DEFAULT_EXPLORER_NETWORK || 'ethereum') as NetworkType;
 
-// Define available networks
-const availableNetworks: NetworkType[] = ['ethereum', 'sonic', 'base'];
+// Define available networks - only include networks with API keys
+const availableNetworks: NetworkType[] = Object.entries(apiKeys)
+  .filter(([_, key]) => key !== '')
+  .map(([network]) => network as NetworkType);
 
-// Initialize Etherscan service with all supported networks
-const etherscanService = new EtherscanService(apiKey, defaultNetwork);
+if (availableNetworks.length === 0) {
+  throw new Error('No API keys provided for any network');
+}
+
+// Initialize Etherscan service with all supported networks and their API keys
+const etherscanService = new EtherscanService(apiKeys, defaultNetwork);
 
 // Create server instance
 const server = new Server(
@@ -211,6 +229,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "check-balance") {
     try {
       const { address, network } = AddressSchema.parse(args);
+      
+      // Check if the network is supported
+      if (network && !etherscanService.isNetworkSupported(network)) {
+        return {
+          content: [{ type: "text", text: `Network "${network}" is not supported or missing API key. Available networks: ${availableNetworks.join(', ')}` }],
+        };
+      }
+      
       const balance = await etherscanService.getAddressBalance(address, network);
       const response = `Address: ${balance.address}\nBalance: ${balance.balanceInEth} ${balance.currencySymbol}\nNetwork: ${balance.network}`;
       return {
@@ -227,6 +253,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "get-transactions") {
     try {
       const { address, limit, network } = TransactionHistorySchema.parse(args);
+      
+      // Check if the network is supported
+      if (network && !etherscanService.isNetworkSupported(network)) {
+        return {
+          content: [{ type: "text", text: `Network "${network}" is not supported or missing API key. Available networks: ${availableNetworks.join(', ')}` }],
+        };
+      }
+      
       const transactions = await etherscanService.getTransactionHistory(address, limit, network);
       const networkConfig = etherscanService.getNetworkConfig(network);
       
@@ -259,6 +293,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "get-token-transfers") {
     try {
       const { address, limit, network } = TokenTransferSchema.parse(args);
+      
+      // Check if the network is supported
+      if (network && !etherscanService.isNetworkSupported(network)) {
+        return {
+          content: [{ type: "text", text: `Network "${network}" is not supported or missing API key. Available networks: ${availableNetworks.join(', ')}` }],
+        };
+      }
+      
       const transfers = await etherscanService.getTokenTransfers(address, limit, network);
       
       const formattedTransfers = transfers.map(tx => {
@@ -291,6 +333,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "get-contract-abi") {
     try {
       const { address, network } = ContractSchema.parse(args);
+      
+      // Check if the network is supported
+      if (network && !etherscanService.isNetworkSupported(network)) {
+        return {
+          content: [{ type: "text", text: `Network "${network}" is not supported or missing API key. Available networks: ${availableNetworks.join(', ')}` }],
+        };
+      }
+      
       const abi = await etherscanService.getContractABI(address, network);
       const selectedNetwork = network || defaultNetwork;
       
@@ -308,6 +358,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === "get-gas-prices") {
     try {
       const { network } = GasOracleSchema.parse(args);
+      
+      // Check if the network is supported
+      if (network && !etherscanService.isNetworkSupported(network)) {
+        return {
+          content: [{ type: "text", text: `Network "${network}" is not supported or missing API key. Available networks: ${availableNetworks.join(', ')}` }],
+        };
+      }
+      
       const prices = await etherscanService.getGasOracle(network);
       const selectedNetwork = network || defaultNetwork;
       
@@ -327,6 +385,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const { address, network } = AddressSchema.parse(args);
       const selectedNetwork = network || defaultNetwork;
+      
+      // Check if the network is supported
+      if (network && !etherscanService.isNetworkSupported(network)) {
+        return {
+          content: [{ type: "text", text: `Network "${network}" is not supported or missing API key. Available networks: ${availableNetworks.join(', ')}` }],
+        };
+      }
+      
       const ensName = await etherscanService.getENSName(address, network);
       
       // ENS is only available on Ethereum mainnet

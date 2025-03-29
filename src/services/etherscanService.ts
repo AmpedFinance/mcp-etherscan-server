@@ -56,18 +56,23 @@ const NETWORK_CONFIGS: Record<NetworkType, ApiEndpoints> = {
 export class EtherscanService {
   private providers: Record<NetworkType, ethers.EtherscanProvider>;
   private networkConfigs: Record<NetworkType, ApiEndpoints>;
-  private apiKey: string;
+  private apiKeys: Record<NetworkType, string>;
   private defaultNetwork: NetworkType;
 
-  constructor(apiKey: string, defaultNetwork: NetworkType = 'ethereum') {
-    this.apiKey = apiKey;
+  constructor(apiKeys: Record<NetworkType, string>, defaultNetwork: NetworkType = 'ethereum') {
+    this.apiKeys = apiKeys;
     this.defaultNetwork = defaultNetwork;
     this.networkConfigs = NETWORK_CONFIGS;
     
-    // Initialize providers for all networks
+    // Initialize providers for networks with API keys
     this.providers = {} as Record<NetworkType, ethers.EtherscanProvider>;
     for (const network of Object.keys(NETWORK_CONFIGS) as NetworkType[]) {
-      this.providers[network] = new ethers.EtherscanProvider(NETWORK_CONFIGS[network].networkName, apiKey);
+      if (this.apiKeys[network]) {
+        this.providers[network] = new ethers.EtherscanProvider(
+          NETWORK_CONFIGS[network].networkName, 
+          this.apiKeys[network]
+        );
+      }
     }
   }
   
@@ -80,7 +85,18 @@ export class EtherscanService {
   // Helper to get the provider for a specific network
   private getProvider(network?: NetworkType): ethers.EtherscanProvider {
     const selectedNetwork = network || this.defaultNetwork;
+    
+    if (!this.providers[selectedNetwork]) {
+      throw new Error(`Network ${selectedNetwork} is not supported or missing API key`);
+    }
+    
     return this.providers[selectedNetwork];
+  }
+  
+  // Check if a network is supported (has API key)
+  public isNetworkSupported(network?: NetworkType): boolean {
+    const selectedNetwork = network || this.defaultNetwork;
+    return !!this.apiKeys[selectedNetwork] && !!this.providers[selectedNetwork];
   }
 
   async getAddressBalance(address: string, network?: NetworkType): Promise<{
@@ -129,7 +145,7 @@ export class EtherscanService {
       
       // Get transactions directly from explorer API
       const result = await fetch(
-        `${networkConfig.apiUrl}?module=account&action=txlist&address=${validAddress}&startblock=0&endblock=99999999&page=1&offset=${limit}&sort=desc&apikey=${this.apiKey}`
+        `${networkConfig.apiUrl}?module=account&action=txlist&address=${validAddress}&startblock=0&endblock=99999999&page=1&offset=${limit}&sort=desc&apikey=${this.apiKeys[selectedNetwork]}`
       );
       
       const data = await result.json();
@@ -164,7 +180,7 @@ export class EtherscanService {
       
       // Get ERC20 token transfers
       const result = await fetch(
-        `${networkConfig.apiUrl}?module=account&action=tokentx&address=${validAddress}&page=1&offset=${limit}&sort=desc&apikey=${this.apiKey}`
+        `${networkConfig.apiUrl}?module=account&action=tokentx&address=${validAddress}&page=1&offset=${limit}&sort=desc&apikey=${this.apiKeys[selectedNetwork]}`
       );
       
       const data = await result.json();
@@ -201,7 +217,7 @@ export class EtherscanService {
       
       // Get contract ABI
       const result = await fetch(
-        `${networkConfig.apiUrl}?module=contract&action=getabi&address=${validAddress}&apikey=${this.apiKey}`
+        `${networkConfig.apiUrl}?module=contract&action=getabi&address=${validAddress}&apikey=${this.apiKeys[selectedNetwork]}`
       );
       
       const data = await result.json();
@@ -226,7 +242,7 @@ export class EtherscanService {
       
       // Get current gas prices
       const result = await fetch(
-        `${networkConfig.apiUrl}?module=gastracker&action=gasoracle&apikey=${this.apiKey}`
+        `${networkConfig.apiUrl}?module=gastracker&action=gasoracle&apikey=${this.apiKeys[selectedNetwork]}`
       );
       
       const data = await result.json();

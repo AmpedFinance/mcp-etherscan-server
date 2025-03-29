@@ -29,9 +29,26 @@ cd mcp-etherscan-server
 npm install
 ```
 
-3. Create a `.env` file in the root directory:
+3. Create a `.env` file in the root directory based on `.env.example`:
 ```bash
-ETHERSCAN_API_KEY=your_api_key_here
+# Copy the example file
+cp .env.example .env
+
+# Edit the file with your API keys
+nano .env  # or use your preferred editor
+```
+
+Your `.env` file should contain API keys for the networks you want to support:
+```bash
+# Network-specific API keys (preferred approach)
+ETHEREUM_API_KEY=your_etherscan_api_key_here
+SONIC_API_KEY=your_sonic_explorer_api_key_here
+BASE_API_KEY=your_basescan_api_key_here
+
+# Or use a single fallback key for all networks
+# ETHERSCAN_API_KEY=your_fallback_api_key_here
+
+# Default network to use when no network is specified
 DEFAULT_EXPLORER_NETWORK=ethereum  # Options: ethereum, sonic, base
 ```
 
@@ -56,28 +73,32 @@ This server implements the Model Context Protocol (MCP) to provide tools for int
 ### Available Tools
 
 1. `check-balance`
-   - Input: Blockchain address
+   - Input: Blockchain address, optional network (ethereum, sonic, base)
    - Output: Native token balance in both Wei and formatted units (ETH/SONIC/etc.)
 
 2. `get-transactions`
-   - Input: Blockchain address, optional limit
+   - Input: Blockchain address, optional limit, optional network (ethereum, sonic, base)
    - Output: Recent transactions with timestamps, values, and addresses
 
 3. `get-token-transfers`
-   - Input: Blockchain address, optional limit
+   - Input: Blockchain address, optional limit, optional network (ethereum, sonic, base)
    - Output: Recent token transfers with token details
 
 4. `get-contract-abi`
-   - Input: Contract address
+   - Input: Contract address, optional network (ethereum, sonic, base)
    - Output: Contract ABI in JSON format
 
 5. `get-gas-prices`
-   - Input: None
+   - Input: Optional network (ethereum, sonic, base)
    - Output: Current gas prices in Gwei
 
 6. `get-ens-name`
-   - Input: Blockchain address
+   - Input: Blockchain address, optional network (ethereum only supports ENS)
    - Output: Associated ENS name if available (Ethereum mainnet only)
+   
+7. `list-supported-networks`
+   - Input: None
+   - Output: List of all supported blockchain networks with their currency symbols
 
 ## Using with Claude Desktop
 
@@ -125,9 +146,13 @@ or
 Check current gas prices on Base
 ```
 
-You can also list all supported networks:
+You can also list all supported networks and get information about them:
 ```
 What blockchain networks do you support?
+```
+or
+```
+List all supported blockchain networks
 ```
 
 ## Development
