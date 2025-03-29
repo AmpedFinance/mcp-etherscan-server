@@ -1,5 +1,13 @@
 import { ethers } from 'ethers';
 
+export type NetworkType = 'ethereum' | 'sonic' | 'base';
+
+export interface ApiEndpoints {
+  apiUrl: string;
+  networkName: string;
+  currencySymbol: string;
+}
+
 export interface Transaction {
   hash: string;
   from: string;
@@ -26,32 +34,82 @@ export interface GasPrice {
   fastGwei: string;
 }
 
-export class EtherscanService {
-  private provider: ethers.EtherscanProvider;
+// Network configuration for different explorers
+const NETWORK_CONFIGS: Record<NetworkType, ApiEndpoints> = {
+  ethereum: {
+    apiUrl: 'https://api.etherscan.io/api',
+    networkName: 'mainnet',
+    currencySymbol: 'ETH'
+  },
+  sonic: {
+    apiUrl: 'https://explorer.sonic.onerpc.com/api',
+    networkName: 'sonic',
+    currencySymbol: 'SONIC'
+  },
+  base: {
+    apiUrl: 'https://api.basescan.org/api',
+    networkName: 'base',
+    currencySymbol: 'ETH'
+  }
+};
 
-  constructor(apiKey: string) {
-    this.provider = new ethers.EtherscanProvider('mainnet', apiKey);
+export class EtherscanService {
+  private providers: Record<NetworkType, ethers.EtherscanProvider>;
+  private networkConfigs: Record<NetworkType, ApiEndpoints>;
+  private apiKey: string;
+  private defaultNetwork: NetworkType;
+
+  constructor(apiKey: string, defaultNetwork: NetworkType = 'ethereum') {
+    this.apiKey = apiKey;
+    this.defaultNetwork = defaultNetwork;
+    this.networkConfigs = NETWORK_CONFIGS;
+    
+    // Initialize providers for all networks
+    this.providers = {} as Record<NetworkType, ethers.EtherscanProvider>;
+    for (const network of Object.keys(NETWORK_CONFIGS) as NetworkType[]) {
+      this.providers[network] = new ethers.EtherscanProvider(NETWORK_CONFIGS[network].networkName, apiKey);
+    }
+  }
+  
+  // Helper to get the network configuration
+  public getNetworkConfig(network?: NetworkType): ApiEndpoints {
+    const selectedNetwork = network || this.defaultNetwork;
+    return this.networkConfigs[selectedNetwork];
+  }
+  
+  // Helper to get the provider for a specific network
+  private getProvider(network?: NetworkType): ethers.EtherscanProvider {
+    const selectedNetwork = network || this.defaultNetwork;
+    return this.providers[selectedNetwork];
   }
 
-  async getAddressBalance(address: string): Promise<{
+  async getAddressBalance(address: string, network?: NetworkType): Promise<{
     address: string;
     balanceInWei: bigint;
     balanceInEth: string;
+    currencySymbol: string;
+    network: NetworkType;
   }> {
     try {
+      const selectedNetwork = network || this.defaultNetwork;
+      const provider = this.getProvider(selectedNetwork);
+      const networkConfig = this.getNetworkConfig(selectedNetwork);
+      
       // Validate the address
       const validAddress = ethers.getAddress(address);
       
       // Get balance in Wei
-      const balanceInWei = await this.provider.getBalance(validAddress);
+      const balanceInWei = await provider.getBalance(validAddress);
       
-      // Convert to ETH
+      // Convert to ETH/SONIC/etc.
       const balanceInEth = ethers.formatEther(balanceInWei);
 
       return {
         address: validAddress,
         balanceInWei,
-        balanceInEth
+        balanceInEth,
+        currencySymbol: networkConfig.currencySymbol,
+        network: selectedNetwork
       };
     } catch (error) {
       if (error instanceof Error) {
@@ -61,14 +119,17 @@ export class EtherscanService {
     }
   }
 
-  async getTransactionHistory(address: string, limit: number = 10): Promise<Transaction[]> {
+  async getTransactionHistory(address: string, limit: number = 10, network?: NetworkType): Promise<Transaction[]> {
     try {
+      const selectedNetwork = network || this.defaultNetwork;
+      const networkConfig = this.getNetworkConfig(selectedNetwork);
+      
       // Validate the address
       const validAddress = ethers.getAddress(address);
       
-      // Get transactions directly from Etherscan API
+      // Get transactions directly from explorer API
       const result = await fetch(
-        `https://api.etherscan.io/api?module=account&action=txlist&address=${validAddress}&startblock=0&endblock=99999999&page=1&offset=${limit}&sort=desc&apikey=${this.provider.apiKey}`
+        `${networkConfig.apiUrl}?module=account&action=txlist&address=${validAddress}&startblock=0&endblock=99999999&page=1&offset=${limit}&sort=desc&apikey=${this.apiKey}`
       );
       
       const data = await result.json();
@@ -94,13 +155,16 @@ export class EtherscanService {
     }
   }
 
-  async getTokenTransfers(address: string, limit: number = 10): Promise<TokenTransfer[]> {
+  async getTokenTransfers(address: string, limit: number = 10, network?: NetworkType): Promise<TokenTransfer[]> {
     try {
+      const selectedNetwork = network || this.defaultNetwork;
+      const networkConfig = this.getNetworkConfig(selectedNetwork);
+      
       const validAddress = ethers.getAddress(address);
       
       // Get ERC20 token transfers
       const result = await fetch(
-        `https://api.etherscan.io/api?module=account&action=tokentx&address=${validAddress}&page=1&offset=${limit}&sort=desc&apikey=${this.provider.apiKey}`
+        `${networkConfig.apiUrl}?module=account&action=tokentx&address=${validAddress}&page=1&offset=${limit}&sort=desc&apikey=${this.apiKey}`
       );
       
       const data = await result.json();
@@ -128,13 +192,16 @@ export class EtherscanService {
     }
   }
 
-  async getContractABI(address: string): Promise<string> {
+  async getContractABI(address: string, network?: NetworkType): Promise<string> {
     try {
+      const selectedNetwork = network || this.defaultNetwork;
+      const networkConfig = this.getNetworkConfig(selectedNetwork);
+      
       const validAddress = ethers.getAddress(address);
       
       // Get contract ABI
       const result = await fetch(
-        `https://api.etherscan.io/api?module=contract&action=getabi&address=${validAddress}&apikey=${this.provider.apiKey}`
+        `${networkConfig.apiUrl}?module=contract&action=getabi&address=${validAddress}&apikey=${this.apiKey}`
       );
       
       const data = await result.json();
@@ -152,11 +219,14 @@ export class EtherscanService {
     }
   }
 
-  async getGasOracle(): Promise<GasPrice> {
+  async getGasOracle(network?: NetworkType): Promise<GasPrice> {
     try {
+      const selectedNetwork = network || this.defaultNetwork;
+      const networkConfig = this.getNetworkConfig(selectedNetwork);
+      
       // Get current gas prices
       const result = await fetch(
-        `https://api.etherscan.io/api?module=gastracker&action=gasoracle&apikey=${this.provider.apiKey}`
+        `${networkConfig.apiUrl}?module=gastracker&action=gasoracle&apikey=${this.apiKey}`
       );
       
       const data = await result.json();
@@ -178,10 +248,22 @@ export class EtherscanService {
     }
   }
 
-  async getENSName(address: string): Promise<string | null> {
+  async getENSName(address: string, network?: NetworkType): Promise<string | null> {
     try {
+      const selectedNetwork = network || this.defaultNetwork;
+      const provider = this.getProvider(selectedNetwork);
+      const networkConfig = this.getNetworkConfig(selectedNetwork);
+      
       const validAddress = ethers.getAddress(address);
-      return await this.provider.lookupAddress(validAddress);
+      
+      // For Ethereum mainnet, use the provider's lookupAddress method
+      if (networkConfig.networkName === 'mainnet') {
+        return await provider.lookupAddress(validAddress);
+      }
+      
+      // For other networks that might not have ENS support
+      // Return null or consider using network-specific name services where available
+      return null;
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Failed to get ENS name: ${error.message}`);

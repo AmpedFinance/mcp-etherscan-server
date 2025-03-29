@@ -1,12 +1,12 @@
 {
-  "name": "mcp-etherscan-server",
-  "version": "1.0.0",
-  "description": "A TypeScript server boilerplate",
+  "name": "mcp-blockchain-explorer-server",
+  "version": "1.2.0",
+  "description": "A blockchain explorer server supporting Ethereum, Sonic, and Base networks",
   "type": "module",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "bin": {
-    "etherscan-server": "build/index.js"
+    "blockchain-explorer-server": "build/index.js"
   },
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
@@ -21,7 +21,12 @@
   "keywords": [
     "typescript",
     "server",
-    "boilerplate"
+    "blockchain",
+    "ethereum",
+    "sonic",
+    "base",
+    "etherscan",
+    "mcp"
   ],
   "author": "",
   "license": "MIT",

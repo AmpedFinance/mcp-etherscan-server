@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { config } from 'dotenv';
-import { EtherscanService } from './services/etherscanService.js';
+import { EtherscanService, NetworkType } from './services/etherscanService.js';
 import { z } from 'zod';
 
 // Load environment variables
@@ -13,14 +13,20 @@ if (!apiKey) {
   throw new Error('ETHERSCAN_API_KEY environment variable is required');
 }
 
-// Initialize Etherscan service
-const etherscanService = new EtherscanService(apiKey);
+// Get default network from environment variable or default to ethereum
+const defaultNetwork = (process.env.DEFAULT_EXPLORER_NETWORK || 'ethereum') as NetworkType;
+
+// Define available networks
+const availableNetworks: NetworkType[] = ['ethereum', 'sonic', 'base'];
+
+// Initialize Etherscan service with all supported networks
+const etherscanService = new EtherscanService(apiKey, defaultNetwork);
 
 // Create server instance
 const server = new Server(
   {
-    name: "etherscan-server",
-    version: "1.0.0",
+    name: "blockchain-explorer-server",
+    version: "1.2.0",
   },
   {
     capabilities: {
@@ -32,20 +38,28 @@ const server = new Server(
 // Define schemas for validation
 const AddressSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
+  network: z.enum(['ethereum', 'sonic', 'base']).optional(),
 });
 
 const TransactionHistorySchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   limit: z.number().min(1).max(100).optional(),
+  network: z.enum(['ethereum', 'sonic', 'base']).optional(),
 });
 
 const TokenTransferSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
   limit: z.number().min(1).max(100).optional(),
+  network: z.enum(['ethereum', 'sonic', 'base']).optional(),
 });
 
 const ContractSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address format'),
+  network: z.enum(['ethereum', 'sonic', 'base']).optional(),
+});
+
+const GasOracleSchema = z.object({
+  network: z.enum(['ethereum', 'sonic', 'base']).optional(),
 });
 
 // List available tools
@@ -54,28 +68,33 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "check-balance",
-        description: "Check the ETH balance of an Ethereum address",
+        description: `Check the balance of an address on any supported blockchain network`,
         inputSchema: {
           type: "object",
           properties: {
             address: {
               type: "string",
-              description: "Ethereum address (0x format)",
+              description: "Blockchain address (0x format)",
               pattern: "^0x[a-fA-F0-9]{40}$"
             },
+            network: {
+              type: "string",
+              description: "Blockchain network to query (ethereum, sonic, or base). Defaults to ethereum if not specified.",
+              enum: ["ethereum", "sonic", "base"]
+            }
           },
           required: ["address"],
         },
       },
       {
         name: "get-transactions",
-        description: "Get recent transactions for an Ethereum address",
+        description: `Get recent transactions for an address on any supported blockchain network`,
         inputSchema: {
           type: "object",
           properties: {
             address: {
               type: "string",
-              description: "Ethereum address (0x format)",
+              description: "Blockchain address (0x format)",
               pattern: "^0x[a-fA-F0-9]{40}$"
             },
             limit: {
@@ -84,19 +103,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               minimum: 1,
               maximum: 100
             },
+            network: {
+              type: "string",
+              description: "Blockchain network to query (ethereum, sonic, or base). Defaults to ethereum if not specified.",
+              enum: ["ethereum", "sonic", "base"]
+            }
           },
           required: ["address"],
         },
       },
       {
         name: "get-token-transfers",
-        description: "Get ERC20 token transfers for an Ethereum address",
+        description: `Get token transfers for an address on any supported blockchain network`,
         inputSchema: {
           type: "object",
           properties: {
             address: {
               type: "string",
-              description: "Ethereum address (0x format)",
+              description: "Blockchain address (0x format)",
               pattern: "^0x[a-fA-F0-9]{40}$"
             },
             limit: {
@@ -105,13 +129,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               minimum: 1,
               maximum: 100
             },
+            network: {
+              type: "string",
+              description: "Blockchain network to query (ethereum, sonic, or base). Defaults to ethereum if not specified.",
+              enum: ["ethereum", "sonic", "base"]
+            }
           },
           required: ["address"],
         },
       },
       {
         name: "get-contract-abi",
-        description: "Get the ABI for a smart contract",
+        description: `Get the ABI for a smart contract on any supported blockchain network`,
         inputSchema: {
           type: "object",
           properties: {
@@ -120,31 +149,55 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               description: "Contract address (0x format)",
               pattern: "^0x[a-fA-F0-9]{40}$"
             },
+            network: {
+              type: "string",
+              description: "Blockchain network to query (ethereum, sonic, or base). Defaults to ethereum if not specified.",
+              enum: ["ethereum", "sonic", "base"]
+            }
           },
           required: ["address"],
         },
       },
       {
         name: "get-gas-prices",
-        description: "Get current gas prices in Gwei",
+        description: `Get current gas prices on any supported blockchain network in Gwei`,
         inputSchema: {
           type: "object",
-          properties: {},
+          properties: {
+            network: {
+              type: "string",
+              description: "Blockchain network to query (ethereum, sonic, or base). Defaults to ethereum if not specified.",
+              enum: ["ethereum", "sonic", "base"]
+            }
+          },
         },
       },
       {
         name: "get-ens-name",
-        description: "Get the ENS name for an Ethereum address",
+        description: "Get the ENS name for an address (Ethereum mainnet only)",
         inputSchema: {
           type: "object",
           properties: {
             address: {
               type: "string",
-              description: "Ethereum address (0x format)",
+              description: "Blockchain address (0x format)",
               pattern: "^0x[a-fA-F0-9]{40}$"
             },
+            network: {
+              type: "string",
+              description: "Blockchain network to query (ethereum, sonic, or base). Defaults to ethereum if not specified.",
+              enum: ["ethereum", "sonic", "base"]
+            }
           },
           required: ["address"],
+        },
+      },
+      {
+        name: "list-supported-networks",
+        description: "List all supported blockchain networks",
+        inputSchema: {
+          type: "object",
+          properties: {},
         },
       },
     ],
@@ -157,9 +210,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "check-balance") {
     try {
-      const { address } = AddressSchema.parse(args);
-      const balance = await etherscanService.getAddressBalance(address);
-      const response = `Address: ${balance.address}\nBalance: ${balance.balanceInEth} ETH`;
+      const { address, network } = AddressSchema.parse(args);
+      const balance = await etherscanService.getAddressBalance(address, network);
+      const response = `Address: ${balance.address}\nBalance: ${balance.balanceInEth} ${balance.currencySymbol}\nNetwork: ${balance.network}`;
       return {
         content: [{ type: "text", text: response }],
       };
@@ -173,21 +226,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "get-transactions") {
     try {
-      const { address, limit } = TransactionHistorySchema.parse(args);
-      const transactions = await etherscanService.getTransactionHistory(address, limit);
+      const { address, limit, network } = TransactionHistorySchema.parse(args);
+      const transactions = await etherscanService.getTransactionHistory(address, limit, network);
+      const networkConfig = etherscanService.getNetworkConfig(network);
+      
       const formattedTransactions = transactions.map(tx => {
         const date = new Date(tx.timestamp * 1000).toLocaleString();
         return `Block ${tx.blockNumber} (${date}):\n` +
                `Hash: ${tx.hash}\n` +
                `From: ${tx.from}\n` +
                `To: ${tx.to}\n` +
-               `Value: ${tx.value} ETH\n` +
+               `Value: ${tx.value} ${networkConfig.currencySymbol}\n` +
                `---`;
       }).join('\n');
 
+      const selectedNetwork = network || defaultNetwork;
       const response = transactions.length > 0
-        ? `Recent transactions for ${address}:\n\n${formattedTransactions}`
-        : `No transactions found for ${address}`;
+        ? `Recent transactions for ${address} on ${selectedNetwork} network:\n\n${formattedTransactions}`
+        : `No transactions found for ${address} on ${selectedNetwork} network`;
 
       return {
         content: [{ type: "text", text: response }],
@@ -202,8 +258,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "get-token-transfers") {
     try {
-      const { address, limit } = TokenTransferSchema.parse(args);
-      const transfers = await etherscanService.getTokenTransfers(address, limit);
+      const { address, limit, network } = TokenTransferSchema.parse(args);
+      const transfers = await etherscanService.getTokenTransfers(address, limit, network);
+      
       const formattedTransfers = transfers.map(tx => {
         const date = new Date(tx.timestamp * 1000).toLocaleString();
         return `Block ${tx.blockNumber} (${date}):\n` +
@@ -215,9 +272,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                `---`;
       }).join('\n');
 
+      const selectedNetwork = network || defaultNetwork;
       const response = transfers.length > 0
-        ? `Recent token transfers for ${address}:\n\n${formattedTransfers}`
-        : `No token transfers found for ${address}`;
+        ? `Recent token transfers for ${address} on ${selectedNetwork} network:\n\n${formattedTransfers}`
+        : `No token transfers found for ${address} on ${selectedNetwork} network`;
 
       return {
         content: [{ type: "text", text: response }],
@@ -232,10 +290,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "get-contract-abi") {
     try {
-      const { address } = ContractSchema.parse(args);
-      const abi = await etherscanService.getContractABI(address);
+      const { address, network } = ContractSchema.parse(args);
+      const abi = await etherscanService.getContractABI(address, network);
+      const selectedNetwork = network || defaultNetwork;
+      
       return {
-        content: [{ type: "text", text: `Contract ABI for ${address}:\n\n${abi}` }],
+        content: [{ type: "text", text: `Contract ABI for ${address} on ${selectedNetwork} network:\n\n${abi}` }],
       };
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -247,8 +307,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "get-gas-prices") {
     try {
-      const prices = await etherscanService.getGasOracle();
-      const response = `Current Gas Prices:\n` +
+      const { network } = GasOracleSchema.parse(args);
+      const prices = await etherscanService.getGasOracle(network);
+      const selectedNetwork = network || defaultNetwork;
+      
+      const response = `Current Gas Prices on ${selectedNetwork} network:\n` +
                       `Safe Low: ${prices.safeGwei} Gwei\n` +
                       `Standard: ${prices.proposeGwei} Gwei\n` +
                       `Fast: ${prices.fastGwei} Gwei`;
@@ -262,8 +325,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (name === "get-ens-name") {
     try {
-      const { address } = AddressSchema.parse(args);
-      const ensName = await etherscanService.getENSName(address);
+      const { address, network } = AddressSchema.parse(args);
+      const selectedNetwork = network || defaultNetwork;
+      const ensName = await etherscanService.getENSName(address, network);
+      
+      // ENS is only available on Ethereum mainnet
+      if (selectedNetwork !== 'ethereum') {
+        return {
+          content: [{ type: "text", text: `ENS is only available on Ethereum mainnet. Requested network: ${selectedNetwork}` }],
+        };
+      }
+      
       const response = ensName
         ? `ENS name for ${address}: ${ensName}`
         : `No ENS name found for ${address}`;
@@ -278,6 +350,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
+  if (name === "list-supported-networks") {
+    const networkDetails = availableNetworks.map(net => {
+      const config = etherscanService.getNetworkConfig(net);
+      return `- ${net.charAt(0).toUpperCase() + net.slice(1)}: ${config.currencySymbol}`;
+    }).join('\n');
+    
+    const response = `Supported blockchain networks:\n${networkDetails}`;
+    return {
+      content: [{ type: "text", text: response }],
+    };
+  }
+
   throw new Error(`Unknown tool: ${name}`);
 });
 
@@ -285,5 +369,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 export async function startServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Etherscan MCP Server running on stdio");
+  console.error(`Blockchain Explorer MCP Server running on stdio. Default network: ${defaultNetwork}`);
+  console.error(`Supported networks: ${availableNetworks.join(', ')}`);
 } 
